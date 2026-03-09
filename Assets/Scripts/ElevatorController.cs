@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 
 public class ElevatorController : MonoBehaviour
@@ -14,31 +15,74 @@ public class ElevatorController : MonoBehaviour
 
     private SortedSet<int> requests = new SortedSet<int>();
 
-    private int direction = 0;
+    public ElevatorManager manager;
+
+    public TMP_Text floorDisplay;
+    public bool IsBusy()
+    {
+        return requests.Count > 0 || isMoving;
+    }
+
+    public int direction = 0;
     // 1 = up
     // -1 = down
     // 0 = idle
 
+    void Start()
+    {
+        UpdateFloorDisplay();
+    }
     void Update()
     {
+        UpdateCurrentFloor();
+
         if (!isMoving && requests.Count > 0)
         {
             int nextFloor = GetNextFloor();
-            StartCoroutine(MoveToFloor(nextFloor));
+            StartCoroutine(MoveOneFloor(nextFloor));
+        }
+    }
+
+    void UpdateCurrentFloor()
+    {
+        float closestDistance = Mathf.Infinity;
+        int closestFloor = currentFloor;
+
+        for (int i = 0; i < floors.Length; i++)
+        {
+            float distance = Mathf.Abs(transform.position.y - floors[i].position.y);
+
+            if (distance < closestDistance)
+            {
+                closestDistance = distance;
+                closestFloor = i;
+            }
+        }
+
+        if (closestFloor != currentFloor)
+        {
+            currentFloor = closestFloor;
+            UpdateFloorDisplay();
+        }
+    }
+
+    void UpdateFloorDisplay()
+    {
+        if (floorDisplay != null)
+        {
+            floorDisplay.text = currentFloor.ToString();
         }
     }
 
     public void AddRequest(int floor)
     {
-        requests.Add(floor);
-
-        if (direction == 0)
+        if (floor == currentFloor)
         {
-            if (floor > currentFloor)
-                direction = 1;
-            else if (floor < currentFloor)
-                direction = -1;
+            Debug.Log(gameObject.name + " already at floor " + floor);
+            return;
         }
+
+        requests.Add(floor);
     }
 
     int GetNextFloor()
@@ -68,15 +112,27 @@ public class ElevatorController : MonoBehaviour
         return currentFloor;
     }
 
-    IEnumerator MoveToFloor(int targetFloor)
+    public bool HasRequest(int floor)
+    {
+        return requests.Contains(floor);
+    }
+
+    IEnumerator MoveOneFloor(int targetFloor)
     {
         isMoving = true;
 
+        int step = (targetFloor > currentFloor) ? 1 : -1;
+        direction = step;
+
+        int nextFloor = currentFloor + step;
+
         Vector3 targetPos = new Vector3(
-        transform.position.x,
-        floors[targetFloor].position.y,
-        transform.position.z
+            transform.position.x,
+            floors[nextFloor].position.y + 0.5f,
+            transform.position.z
         );
+
+        Debug.Log(gameObject.name + " moving to floor " + nextFloor);
 
         while (Vector3.Distance(transform.position, targetPos) > 0.01f)
         {
@@ -89,9 +145,18 @@ public class ElevatorController : MonoBehaviour
             yield return null;
         }
 
-        currentFloor = targetFloor;
+        currentFloor = nextFloor;
 
-        requests.Remove(targetFloor);
+        if (requests.Contains(currentFloor))
+        {
+            Debug.Log(gameObject.name + " stopping at floor " + currentFloor);
+
+            requests.Remove(currentFloor);
+
+            manager.ClearCall(currentFloor, direction);
+
+            yield return new WaitForSeconds(1.0f);
+        }
 
         if (requests.Count == 0)
             direction = 0;
